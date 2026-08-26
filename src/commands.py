@@ -1,22 +1,24 @@
 import logging
 
-from telegram import ChatPermissions, Update
+from telegram import ChatPermissions
 from telegram.error import TelegramError
 from telegram.ext import CommandHandler, ContextTypes
 
 from config import LOG_CHAT_ID, OWNER_ID
+from moderation import (
+    get_message_link,
+    reload_rules,
+)
 from permissions import (
-    can_use_ai,
     can_use_moderation,
     deny,
     is_group,
 )
-from moderation import get_message_link
 
 logger = logging.getLogger(__name__)
 
 
-async def get_target(update: Update):
+async def get_target(update):
     if not can_use_moderation(update):
         await deny(update)
         return None
@@ -44,11 +46,8 @@ async def get_target(update: Update):
     return target
 
 
-async def start_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
-    if not can_use_ai(update):
+async def start_command(update, context) -> None:
+    if update.effective_user.id != OWNER_ID:
         await deny(update)
         return
 
@@ -57,10 +56,7 @@ async def start_command(
     )
 
 
-async def help_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def help_command(update, context) -> None:
     if not can_use_moderation(update):
         await deny(update)
         return
@@ -77,14 +73,12 @@ async def help_command(
         "/report\n"
         "/status\n"
         "/rules\n"
+        "/reloadrules\n"
         "/unban USER_ID"
     )
 
 
-async def delete_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def delete_command(update, context) -> None:
     target = await get_target(update)
 
     if not target:
@@ -101,25 +95,18 @@ async def delete_command(
         )
 
 
-async def warn_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def warn_command(update, context) -> None:
     target = await get_target(update)
 
     if not target:
         return
 
     await update.effective_message.reply_text(
-        f"Warning issued to "
-        f"{target.from_user.full_name}."
+        f"Warning issued to {target.from_user.full_name}."
     )
 
 
-async def mute_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def mute_command(update, context) -> None:
     target = await get_target(update)
 
     if not target:
@@ -137,10 +124,7 @@ async def mute_command(
     )
 
 
-async def unmute_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def unmute_command(update, context) -> None:
     target = await get_target(update)
 
     if not target:
@@ -169,10 +153,7 @@ async def unmute_command(
     )
 
 
-async def kick_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def kick_command(update, context) -> None:
     target = await get_target(update)
 
     if not target:
@@ -191,10 +172,7 @@ async def kick_command(
     )
 
 
-async def ban_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def ban_command(update, context) -> None:
     target = await get_target(update)
 
     if not target:
@@ -209,10 +187,7 @@ async def ban_command(
     )
 
 
-async def report_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def report_command(update, context) -> None:
     target = await get_target(update)
 
     if not target:
@@ -238,10 +213,7 @@ async def report_command(
     )
 
 
-async def status_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def status_command(update, context) -> None:
     if not can_use_moderation(update):
         await deny(update)
         return
@@ -251,23 +223,42 @@ async def status_command(
     )
 
 
-async def rules_command(
-    update: Update,
+async def rules_command(update, context) -> None:
+    if not can_use_moderation(update):
+        await deny(update)
+        return
+
+    await update.effective_message.reply_text(
+        "Moderation rules are active."
+    )
+
+
+async def reload_rules_command(
+    update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     if not can_use_moderation(update):
         await deny(update)
         return
 
-    await update.effective_message.reply_text(
-        "Reply to a message before using a moderation command."
-    )
+    try:
+        reload_rules()
+
+        await update.effective_message.reply_text(
+            "Moderation rules reloaded."
+        )
+
+    except Exception:
+        logger.exception(
+            "Could not reload moderation rules"
+        )
+
+        await update.effective_message.reply_text(
+            "Could not reload rules. Check project2501.py."
+        )
 
 
-async def unban_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> None:
+async def unban_command(update, context) -> None:
     if not can_use_moderation(update):
         await deny(update)
         return
@@ -331,5 +322,9 @@ def register_commands(application) -> None:
         CommandHandler("rules", rules_command)
     )
     application.add_handler(
+        CommandHandler("reloadrules", reload_rules_command)
+    )
+    application.add_handler(
         CommandHandler("unban", unban_command)
     )
+
