@@ -1,20 +1,43 @@
+import importlib
 import logging
 import re
 from html import escape
 from urllib.parse import urlparse
 
-from telegram import Update
 from telegram.error import TelegramError
 
+import project2501
 from config import LOG_CHAT_ID
-from project2501 import (
-    BLOCKED_ALIASES,
-    BLOCKED_DOMAINS,
-    BLOCKED_TELEGRAM_PATTERNS,
-    HIGH_CONFIDENCE_TERMS,
-)
 
 logger = logging.getLogger(__name__)
+
+
+BLOCKED_DOMAINS = set(project2501.BLOCKED_DOMAINS)
+BLOCKED_ALIASES = set(project2501.BLOCKED_ALIASES)
+BLOCKED_TELEGRAM_PATTERNS = set(
+    project2501.BLOCKED_TELEGRAM_PATTERNS
+)
+HIGH_CONFIDENCE_TERMS = set(
+    project2501.HIGH_CONFIDENCE_TERMS
+)
+
+
+def reload_rules() -> None:
+    global BLOCKED_DOMAINS
+    global BLOCKED_ALIASES
+    global BLOCKED_TELEGRAM_PATTERNS
+    global HIGH_CONFIDENCE_TERMS
+
+    importlib.reload(project2501)
+
+    BLOCKED_DOMAINS = set(project2501.BLOCKED_DOMAINS)
+    BLOCKED_ALIASES = set(project2501.BLOCKED_ALIASES)
+    BLOCKED_TELEGRAM_PATTERNS = set(
+        project2501.BLOCKED_TELEGRAM_PATTERNS
+    )
+    HIGH_CONFIDENCE_TERMS = set(
+        project2501.HIGH_CONFIDENCE_TERMS
+    )
 
 
 def normalize(text: str) -> str:
@@ -72,42 +95,34 @@ def domain_blocked(domain: str) -> bool:
     )
 
 
-def alias_blocked(text: str) -> bool:
-    return any(
-        alias.lower() in text
-        for alias in BLOCKED_ALIASES
-    )
-
-
-def telegram_pattern_blocked(text: str) -> bool:
-    return any(
-        pattern.lower() in text
-        for pattern in BLOCKED_TELEGRAM_PATTERNS
-    )
-
-
 def classify(message) -> tuple[bool, list[str]]:
-    source = normalize(
+    text = normalize(
         (message.text or "")
         + "\n"
         + (message.caption or "")
     )
 
-    urls = extract_urls(source)
+    urls = extract_urls(text)
     domains = [get_domain(url) for url in urls]
     reasons = []
 
     if any(domain_blocked(domain) for domain in domains):
         reasons.append("blocked domain")
 
-    if alias_blocked(source):
+    if any(
+        alias.lower() in text
+        for alias in BLOCKED_ALIASES
+    ):
         reasons.append("blocked alias")
 
-    if telegram_pattern_blocked(source):
+    if any(
+        pattern.lower() in text
+        for pattern in BLOCKED_TELEGRAM_PATTERNS
+    ):
         reasons.append("blocked Telegram pattern")
 
     if urls and any(
-        term.lower() in source
+        term.lower() in text
         for term in HIGH_CONFIDENCE_TERMS
     ):
         reasons.append("high-confidence indicator")
@@ -143,45 +158,46 @@ async def send_report(
         return
 
     user = message.from_user
-    user_name = escape(
-        user.full_name if user else "Unknown user"
-    )
 
     report = (
-        "⚠️ <b>Moderation report</b>\n\n"
-        f"<b>Chat:</b> "
-        f"{escape(message.chat.title or '(unnamed)')}\n"
-        f"<b>User:</b> {user_name}\n"
-        f"<b>User ID:</b> "
-        f"<code>{user.id if user else 'unknown'}</code>\n"
-        f"<b>Message ID:</b> "
-        f"<code>{message.message_id}</code>\n"
-        f"<b>Reason:</b> "
-        f"{escape(', '.join(reasons))}\n"
-        f"<b>Action:</b> "
-        f"{escape(', '.join(actions))}\n"
-        f"<b>Message link:</b> "
-        f"{escape(get_message_link(message))}"
+        "Moderation report\n"
+        f"Chat: {message.chat.title}\n"
+        f"User: {user.full_name if user else 'Unknown'}\n"
+        f"User ID: {user.id if user else 'Unknown'}\n"
+        f"Message ID: {message.message_id}\n"
+        f"Reason: {', '.join(reasons)}\n"
+        f"Action: {', '.join(actions)}\n"
+        f"Message link: {get_message_link(message)}"
     )
 
     try:
         await context.bot.send_message(
             chat_id=LOG_CHAT_ID,
             text=report,
-            parse_mode="HTML",
             disable_web_page_preview=True,
         )
     except TelegramError:
-        logger.exception("Failed to send moderation report")
+        logger.exception(
+            "Could not send moderation report"
+        )
 
 
 async def automatic_moderation(
-    update: Update,
+    update,
     context,
 ) -> None:
     message = update.effective_message
 
-    if not message or not message.chat:
+    if not message:
+        return
+
+    if not message.chat:
+        return
+
+    if message.chat.type not in (
+        "group",
+        "supergroup",
+    ):
         return
 
     if not message.from_user:
@@ -222,4 +238,3 @@ async def automatic_moderation(
         reasons,
         actions,
     )
-
