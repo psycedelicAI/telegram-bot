@@ -1,14 +1,18 @@
 import logging
 
 import httpx
-from telegram import Update
-from telegram.ext import Application, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
 from ai_chat import ask_ai
 from commands import register_commands
 from config import TOKEN
 from moderation import automatic_moderation
-from permissions import can_use_ai, is_group, deny
+from permissions import can_use_ai, deny, is_group
 
 
 logging.basicConfig(
@@ -20,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 async def text_message(
-    update: Update,
+    update,
     context: ContextTypes.DEFAULT_TYPE,
 ) -> None:
     message = update.effective_message
@@ -81,3 +85,6 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+bot.py
