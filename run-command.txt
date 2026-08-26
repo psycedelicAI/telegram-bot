@@ -1,0 +1,11 @@
+cd ~/Projects/psycedelicai-telegram-bot
+
+source .venv/bin/activate
+
+python -m py_compile src/config.py
+python -m py_compile src/project2501.py
+python -m py_compile src/permissions.py
+python -m py_compile src/ai_chat.py
+python -m py_compile src/moderation.py
+python -m py_compile src/commands.py
+python -m py_compile src/bot.py
